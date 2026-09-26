@@ -1,0 +1,7 @@
+pandas
+cryptography
+pydub
+python-dotenv
+
+# Notes:
+# - `pydub` requires `ffmpeg` installed on the system to convert WAV->MP3.
