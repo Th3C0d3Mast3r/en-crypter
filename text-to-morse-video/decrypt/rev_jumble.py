@@ -12,9 +12,22 @@ from utils.env import read_env
 
 
 def dejumble(groups: str, jump: int) -> str:
-    # groups is the concatenated groups as produced by jumbleEncrypted (single line)
-    # We need to split the string into `jump` groups as evenly as possible.
-    # Determine sizes by dividing total length by jump (some groups may be one char longer).
+    lines = [line.strip() for line in groups.splitlines() if line.strip()]
+    if len(lines) == jump:
+        parts = lines
+    else:
+        compact = "".join(groups.split())
+        parts = _split_compact_groups(compact, jump)
+
+    out = []
+    for i in range(max(len(p) for p in parts)):
+        for p in parts:
+            if i < len(p):
+                out.append(p[i])
+    return "".join(out)
+
+
+def _split_compact_groups(groups: str, jump: int):
     total = len(groups)
     base = total // jump
     extras = total % jump
@@ -25,13 +38,7 @@ def dejumble(groups: str, jump: int) -> str:
         parts.append(groups[idx: idx + size])
         idx += size
 
-    # Now interleave
-    out = []
-    for i in range(max(len(p) for p in parts)):
-        for p in parts:
-            if i < len(p):
-                out.append(p[i])
-    return "".join(out)
+    return parts
 
 
 def main():

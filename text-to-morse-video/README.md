@@ -26,6 +26,9 @@ Thus, the total thing would have the following stuff present for us is:-
 ## ENCRYPTING PROCESS
 
 The `text-to-morse-video` pipeline first AES-encrypts data and outputs a HEX string to `encrypted.txt`.
+Before AES, the pipeline now wraps the input into a JSON manifest that stores each file's relative path,
+size, SHA-256 hash, and Base64-encoded bytes. That makes the decrypt side deterministic for both a
+single file and a whole folder.
 After AES, we apply a simple jumbling step controlled by `CHARACTERS_JUMP_LENGTH` in
 `text-to-morse-video/.env`.
 
@@ -147,6 +150,7 @@ Top-level files and important folders in this directory:
 `text-to-morse-video` implements a multi-stage pipeline that:
 
 - Normalizes input data (`dataToText.py`).
+- Wraps one or more files into a manifest payload so decryption can restore exact file contents and paths.
 - AES-encrypts the normalized text into HEX (`aesConversion.py`).
 - Jumbles the ciphertext into groups based on `CHARACTERS_JUMP_LENGTH` (`jumbleEncrypted.py`).
 - Converts the jumbled HEX into Morse and synthesizes audio (`toMorseCode.py`).
@@ -200,6 +204,10 @@ python decrypt/wav_to_jumbled.py --input clean.wav --output jumbled_recovered.tx
 python decrypt/rev_jumble.py --input jumbled_recovered.txt --output encrypted_recovered.txt
 python -m utils.rev_aes --input encrypted_recovered.txt --output recovered.txt
 ```
+
+If the plaintext is a manifest payload produced by the current encrypt pipeline, `decrypt/decrypt.py`
+restores the original file tree directly into the selected output directory instead of emitting one
+combined text file.
 
 All decrypt scripts read defaults from the shared `text-to-morse-video/.env`. Use CLI flags to override settings for tuning (e.g. `--dot-ms`, `--freq`, `--loop-volume`).
 

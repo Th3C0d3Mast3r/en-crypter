@@ -20,17 +20,19 @@ import math
 
 # ensure local modules and project root import correctly
 base = Path(__file__).resolve().parent
+pipeline_root = base.parent
 project_root = base.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+if str(pipeline_root) not in sys.path:
+    sys.path.insert(0, str(pipeline_root))
 if str(base) not in sys.path:
     sys.path.insert(0, str(base))
 
 from utils.ansi import success, error, info, color
 from utils.env import read_env
+from payload import build_payload
 
-# import helpers from sibling modules
-from dataToText import load_data, normalize
 from aesConversion import AESUtils
 from jumbleEncrypted import jumble
 from toMorseCode import text_to_morse, synthesize_morse, write_wav, try_convert_to_mp3
@@ -70,7 +72,7 @@ def process_text(text: str, work_dir: Path, env: dict, overrides: dict) -> bytes
     jump = int(overrides.get("jump") or env.get("CHARACTERS_JUMP_LENGTH", "5"))
     groups = jumble(encrypted_hex, jump)
     jumbled = "".join(groups)
-    (work_dir / "jumbled.txt").write_text(jumbled, encoding="utf-8")
+    (work_dir / "jumbled.txt").write_text("\n".join(groups), encoding="utf-8")
 
     # synthesize main morse pcm
     dot_ms = int(overrides.get("dot_ms") or env.get("MORSE_DOT_MS", "80"))
@@ -97,11 +99,12 @@ def process_text(text: str, work_dir: Path, env: dict, overrides: dict) -> bytes
     return mixed
 
 
-def process_file(path: Path, work_dir: Path, env: dict, overrides: dict) -> bytes:
-    """Process a single input file through the pipeline."""
-    data = load_data(path)
-    text = normalize(data)
-    return process_text(text, work_dir, env, overrides)
+def build_file_payload(path: Path) -> str:
+    return build_payload([path], path.parent)
+
+
+def build_directory_payload(paths: list[Path], root: Path) -> str:
+    return build_payload(paths, root)
 
 
 def main():
@@ -155,14 +158,9 @@ def main():
     start = time.time()
 
     if args.mode == 0:
-        # Club all input files into a single combined payload
-        texts = []
-        for f in files:
-            data = load_data(f)
-            texts.append(normalize(data))
-        combined_text = "\n".join(texts)
+        payload = build_directory_payload(files, inp if inp.is_dir() else inp.parent)
         print(info(f"Clubbing {len(files)} file(s) into single output payload..."))
-        pcm = process_text(combined_text, out_dir, env, overrides)
+        pcm = process_text(payload, out_dir, env, overrides)
         
         final_path = out_dir / "final.wav"
         write_wav(final_path, pcm)
@@ -180,7 +178,8 @@ def main():
             work_dir = out_dir / name
             work_dir.mkdir(parents=True, exist_ok=True)
             print(info(f"Processing {f} ({i}/{len(files)})"))
-            pcm = process_file(f, work_dir, env, overrides)
+            payload = build_file_payload(f)
+            pcm = process_text(payload, work_dir, env, overrides)
 
             elapsed = time.time() - t0
             avg = (time.time() - start) / i

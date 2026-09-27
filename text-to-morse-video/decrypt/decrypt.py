@@ -17,19 +17,24 @@ import sys
 
 # ensure local directory and project root import correctly
 base = Path(__file__).resolve().parent
+pipeline_root = base.parent
 project_root = base.parent.parent
 if str(base) not in sys.path:
     sys.path.insert(0, str(base))
+if str(pipeline_root) not in sys.path:
+    sys.path.insert(0, str(pipeline_root))
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from utils.ansi import success, error, info, color
 from utils.env import read_env
 from utils.aes import AESUtils
+from payload import restore_payload
 
 import remove_loop
 import wav_to_jumbled
 import rev_jumble
+import string
 
 
 def struct_unpack_samples(pcm_bytes: bytes):
@@ -74,7 +79,7 @@ def process_wav(wav_path: Path, env: dict, overrides: dict) -> str:
     jumbled_text = wav_to_jumbled.morse_tokens_to_text(tokens)
 
     # Filter for hex alphanumeric characters
-    jumbled_concat = ''.join(ch for ch in jumbled_text if ch.isalnum())
+    jumbled_concat = ''.join(ch for ch in jumbled_text if ch in string.hexdigits)
 
     jump = int(overrides.get("jump") or env.get("CHARACTERS_JUMP_LENGTH", "5"))
     encrypted_hex = rev_jumble.dejumble(jumbled_concat, jump)
@@ -137,20 +142,18 @@ def main():
             print(error(f"Failed processing {f}: {e}"))
             continue
 
-        if args.mode == 1:
-            target_dir = out_dir / f.stem
-            target_dir.mkdir(parents=True, exist_ok=True)
-            target = target_dir / "recovered.txt"
-            target.write_text(plaintext, encoding='utf-8')
-            print(success(f"Wrote recovered text to {color(str(target), fg='bright_green')}"))
+        if len(files) == 1 and args.mode == 0:
+            target_dir = out_dir
         else:
-            results.append(plaintext)
+            target_dir = out_dir / f.stem
 
-    if args.mode == 0 and results:
-        final = "\n".join(results)
-        target = out_dir / "final_recovered.txt"
-        target.write_text(final, encoding='utf-8')
-        print(success(f"Wrote combined recovered text to {color(str(target), fg='bright_green')}"))
+        restored = restore_payload(plaintext, target_dir)
+        if len(restored) == 1:
+            print(success(f"Restored file to {color(str(restored[0]), fg='bright_green')}"))
+        else:
+            print(success(f"Restored {len(restored)} file(s) under {color(str(target_dir), fg='bright_green')}"))
+
+        results.append(plaintext)
 
 
 if __name__ == '__main__':

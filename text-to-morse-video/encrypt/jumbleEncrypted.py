@@ -36,7 +36,7 @@ def main():
     args = parser.parse_args()
 
     base = Path(__file__).resolve().parent
-    env = read_env(base / ".env")
+    env = read_env(base.parent / ".env")
     jump = int(env.get("CHARACTERS_JUMP_LENGTH", "5")) if args.jump is None else args.jump
 
     src = args.input_file if args.input_file.is_absolute() else base / args.input_file
@@ -48,7 +48,7 @@ def main():
     groups = jumble(encrypted, jump)
 
     out = args.output_file if args.output_file.is_absolute() else base / args.output_file
-    out.write_text("".join(groups), encoding="utf-8")
+    out.write_text("\n".join(groups), encoding="utf-8")
     print(success(f"Wrote jumbled output to {color(str(out), fg='bright_green')} (jump={jump})"))
 
 
