@@ -23,7 +23,7 @@ from utils.ansi import (
 )
 from utils.env import read_env
 
-env = read_env()
+env = read_env(base.parent / ".env")
 
 
 def load_data(input_file: Path):

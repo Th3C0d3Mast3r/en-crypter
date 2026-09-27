@@ -12,7 +12,7 @@ from utils.aes import AESUtils
 from utils.ansi import success, error, info, warning, color
 from utils.env import read_env
 
-env = read_env()
+env = read_env(base.parent / ".env")
 
 
 def main():

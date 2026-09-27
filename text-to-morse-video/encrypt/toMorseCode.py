@@ -24,7 +24,7 @@ if str(base) not in sys.path:
 from utils.ansi import success, error, info, color
 from utils.env import read_env
 
-env = read_env()
+env = read_env(base.parent / ".env")
 
 
 # Basic international Morse mapping for letters and digits
@@ -152,7 +152,7 @@ def main():
 
     args = parser.parse_args()
 
-    env = read_env()
+    env = read_env(base.parent / ".env")
     dot_ms = int(env.get("MORSE_DOT_MS", "80")) if args.dot_ms is None else args.dot_ms
     freq = int(env.get("MORSE_TONE_FREQ", "750")) if args.freq is None else args.freq
     volume = float(env.get("MORSE_VOLUME", "0.6")) if args.volume is None else args.volume

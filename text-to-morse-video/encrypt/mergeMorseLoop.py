@@ -24,7 +24,7 @@ from utils.ansi import success, error, info, color
 from toMorseCode import text_to_morse, synthesize_morse, write_wav, try_convert_to_mp3
 from utils.env import read_env
 
-env = read_env()
+env = read_env(base.parent / ".env")
 
 
 def mix_pcm(pcm_a: bytes, pcm_b: bytes, volume_a: float = 1.0, volume_b: float = 0.5) -> bytes:
@@ -61,7 +61,7 @@ def main():
 
     args = parser.parse_args()
 
-    env = read_env()
+    env = read_env(base.parent / ".env")
 
     # Resolve defaults from env and naming conventions
     jumbled_arg = args.jumbled if args.jumbled is not None else Path("jumbled.txt")

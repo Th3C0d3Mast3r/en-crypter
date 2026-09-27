@@ -144,7 +144,7 @@ def main():
     files = []
     if inp.is_dir():
         for ext in ("*.txt", "*.csv", "*.json"):  # supported
-            files.extend(sorted(inp.glob(ext)))
+            files.extend(sorted(inp.rglob(ext)))
     elif inp.is_file():
         files = [inp]
     else:

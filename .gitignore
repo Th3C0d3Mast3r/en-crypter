@@ -3,4 +3,5 @@ __pycache__
 .env
 CONTEXT.md
 *.wav
-encrypted_output/*
+encrypted_output/
+decrypted_output/

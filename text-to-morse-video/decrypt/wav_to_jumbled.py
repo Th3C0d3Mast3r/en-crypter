@@ -8,7 +8,6 @@ from pathlib import Path
 import wave
 import struct
 import argparse
-import math
 import sys
 
 # ensure local directory and project root import correctly
@@ -46,24 +45,35 @@ def read_wav_samples(path: Path):
     return samples, fr
 
 
-def detect_runs(samples, fr, threshold=None):
-    # compute absolute values
-    abs_s = [abs(s) for s in samples]
-    maxv = max(abs_s) if abs_s else 0
-    if threshold is None:
-        threshold = max(100, int(maxv * 0.15))
+def detect_runs(samples, fr, threshold=None, frame_ms=5):
+    frame_size = max(1, int(fr * frame_ms / 1000.0))
+    energies = []
+    for start in range(0, len(samples), frame_size):
+        frame = samples[start:start + frame_size]
+        if not frame:
+            continue
+        energies.append(sum(abs(s) for s in frame) / len(frame))
 
-    runs = []  # list of (is_tone:bool, duration_s)
-    i = 0
-    n = len(samples)
-    while i < n:
-        is_tone = abs_s[i] > threshold
-        j = i
-        while j < n and (abs_s[j] > threshold) == is_tone:
-            j += 1
-        dur = (j - i) / fr
-        runs.append((is_tone, dur))
-        i = j
+    maxv = max(energies) if energies else 0
+    if threshold is None:
+        threshold = max(100, maxv * 0.2)
+
+    runs = []
+    if not energies:
+        return runs
+
+    current = energies[0] > threshold
+    frames = 1
+    for energy in energies[1:]:
+        is_tone = energy > threshold
+        if is_tone == current:
+            frames += 1
+            continue
+        runs.append((current, frames * frame_size / fr))
+        current = is_tone
+        frames = 1
+
+    runs.append((current, frames * frame_size / fr))
     return runs
 
 
@@ -120,7 +130,7 @@ def main():
     parser.add_argument('--threshold-mult', type=float, default=0.15, help='Energy threshold multiplier of max amplitude')
 
     args = parser.parse_args()
-    env = read_env()
+    env = read_env(base.parent / '.env')
     dot_ms = int(args.dot_ms if args.dot_ms is not None else env.get('MORSE_DOT_MS', '80'))
     dot_s = dot_ms / 1000.0
 

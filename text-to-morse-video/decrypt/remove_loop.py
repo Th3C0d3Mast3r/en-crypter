@@ -17,40 +17,16 @@ import sys
 
 # ensure local directory and project root import correctly
 base = Path(__file__).resolve().parent
+encrypt_dir = base.parent / "encrypt"
 project_root = base.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+if str(encrypt_dir) not in sys.path:
+    sys.path.insert(0, str(encrypt_dir))
 
 from utils.ansi import success, error, info, color
 from utils.env import read_env
-
-
-# Minimal morse map (subset used by project)
-MORSE = {
-    "A": ".-", "B": "-...", "C": "-.-.", "D": "-..", "E": ".",
-    "F": "..-.", "G": "--.", "H": "....", "I": "..", "J": ".---",
-    "K": "-.-", "L": ".-..", "M": "--", "N": "-.", "O": "---",
-    "P": ".--.", "Q": "--.-", "R": ".-.", "S": "...", "T": "-",
-    "U": "..-", "V": "...-", "W": ".--", "X": "-..-", "Y": "-.--",
-    "Z": "--..",
-    "0": "-----", "1": ".----", "2": "..---", "3": "...--", "4": "....-",
-    "5": ".....", "6": "-....", "7": "--...", "8": "---..", "9": "----.",
-    " ": "/",
-}
-
-
-def text_to_morse(text: str) -> str:
-    parts = []
-    for ch in text:
-        if ch.isspace():
-            parts.append("/")
-            continue
-        code = MORSE.get(ch.upper())
-        if code:
-            parts.append(code)
-        else:
-            parts.append(" ")
-    return " ".join(parts)
+from toMorseCode import text_to_morse
 
 
 def synthesize_morse_pcm(morse: str, dot_ms: int, freq: int, volume: float, sample_rate: int = 44100) -> bytes:
@@ -138,7 +114,7 @@ def main():
     parser.add_argument("--loop-volume", type=float, help="Loop volume used when mixing (0-1)")
 
     args = parser.parse_args()
-    env = read_env()
+    env = read_env(base.parent / ".env")
     loop_word = args.loop_word if args.loop_word is not None else env.get("RANDOM_WORD_ON_LOOP", "")
     if not loop_word:
         print(error("No loop word provided via --loop-word or RANDOM_WORD_ON_LOOP in .env"))

@@ -1,213 +1,531 @@
-# TEXT-TO-MORSE-VIDEO
+# TEXT-TO-MORSE-AUDIO
 
-This is the type of encryption where I will be taking every word. Now, every word would then be AES Encrypted into a format- and it would yield "the thing". Now, in the thing, I will split "the thing" into blocks of 10 continuous, and then, arrange them in an "ALTERNATING PATTERN" something like:-
+`text-to-morse-video` is a reversible file-to-audio encryption pipeline.
 
-1-3-2-5-4 . . . .
+It takes one file or a folder of files, wraps them into a deterministic payload,
+AES-encrypts that payload, rearranges the ciphertext, converts it into Morse audio,
+and then hides that Morse under a looping background Morse track.
 
-This means:-
-`1`:- The first 10 continuous characters
-`3`:- The next 10 continuous characters after `2`
-`2`:- The next 10 continuous characters after `1`
-*(and so on)*
+The decrypt side reverses the same steps and restores the original file contents.
 
-Now, this sequence that I have got, that will be converted into **MORSE CODE**. We label this whole thing's morse code as `base_morse`
+## What It Does
 
-Once this is done, we would need 2 more `MORSE CODES` that would form a **LOOPING BG MUSIC** - so, it adds noise to the given morse, thus, not allowing one to understand, what even is that thing. That could be something like- a repeating morse of- `sike, thats the wrong number` in plain UTF-8 to Morse conversion and so on. 
+The pipeline is designed for these cases:
 
-Now, we merge them, and upload to YT at a +1.5x Speed *(this is also a variable)*
+- Encrypt a single text, JSON, or CSV file into Morse audio.
+- Encrypt a whole folder of supported files into one output audio file.
+- Encrypt a folder so each file gets its own separate audio output.
+- Recover the original files from the produced WAV audio.
+- Use structured data exports such as database dumps converted to CSV or JSON.
 
-Thus, the total thing would have the following stuff present for us is:-
+Supported input file types:
 
+- `.txt`
+- `.json`
+- `.csv`
+
+## How The Pipeline Works
+
+The working flow is:
+
+1. Read one file or many files.
+2. Build a manifest payload containing relative file paths, file sizes, hashes, and raw file bytes encoded in Base64.
+3. AES-encrypt that payload into HEX.
+4. Jumble the HEX by splitting it into `CHARACTERS_JUMP_LENGTH` groups.
+5. Convert the jumbled HEX to Morse.
+6. Synthesize Morse as audio.
+7. Generate a second Morse signal from `RANDOM_WORD_ON_LOOP`.
+8. Overlay both audio streams into the final output.
+
+The reverse flow is:
+
+1. Read the final WAV.
+2. Remove the looping Morse overlay.
+3. Decode the main Morse back into jumbled HEX text.
+4. Reverse the jumbling.
+5. AES-decrypt the recovered HEX.
+6. Rebuild the original file or folder from the manifest payload.
+
+## Project Structure
+
+- `.env`: runtime configuration for AES, jumbling, Morse timing, and loop word.
+- `.env.sample`: sample configuration.
+- `encrypt/`: encryption-side modules.
+- `decrypt/`: decryption-side modules.
+- `payload.py`: manifest builder/restorer used for deterministic file reconstruction.
+
+Main modules:
+
+- `encrypt/encrypt.py`: full encryption pipeline runner.
+- `decrypt/decrypt.py`: full decryption pipeline runner.
+- `encrypt/aesConversion.py`: AES encryption helper CLI.
+- `encrypt/jumbleEncrypted.py`: HEX jumbling helper CLI.
+- `encrypt/toMorseCode.py`: jumbled text to Morse audio.
+- `encrypt/mergeMorseLoop.py`: mixes main Morse and loop Morse.
+- `decrypt/remove_loop.py`: subtracts loop Morse from the final WAV.
+- `decrypt/wav_to_jumbled.py`: decodes Morse WAV back to jumbled text.
+- `decrypt/rev_jumble.py`: reconstructs original encrypted HEX.
+- `../utils/rev_aes.py`: decrypts recovered HEX to plaintext.
+
+## Configuration
+
+Create `.env` using `.env.sample`.
 
 > [!NOTE]
-> Well, Autocomplete and Copilot came dead handy to understand and write this code faster; as there were things I did not know, and well, `tab` is what helped write faster and build better!
----
+> - AES key length must be `16`, `24`, or `32` bytes.
+> - AES IV must be exactly `16` bytes.
+> - Only `cbc` mode is supported right now.
+> - `MORSE_OUTPUT_FORMAT=mp3` needs `ffmpeg` available through `pydub`.
+> - For decryption and testing, `wav` output is easier and more stable.
 
-## ENCRYPTING PROCESS
+## Installation
 
-The `text-to-morse-video` pipeline first AES-encrypts data and outputs a HEX string to `encrypted.txt`.
-Before AES, the pipeline now wraps the input into a JSON manifest that stores each file's relative path,
-size, SHA-256 hash, and Base64-encoded bytes. That makes the decrypt side deterministic for both a
-single file and a whole folder.
-After AES, we apply a simple jumbling step controlled by `CHARACTERS_JUMP_LENGTH` in
-`text-to-morse-video/.env`.
-
-- Read `encrypted.txt` (hex output from AES).
-- Let `jump = CHARACTERS_JUMP_LENGTH` (default 5).
-- Partition the hex string into `jump` groups by index modulo `jump`:
-	- group[i] contains every character at positions where index % jump == i.
-- Write groups in order 0..jump-1 to `jumbled.txt`, one group per line.
-
-This process is reversible: to recover the original hex, read the groups and
-interleave characters by taking the first char from group0, then group1, ...,
-group(jump-1), then continuing with the second char from each group, and so on.
-
-The provided script `text-to-morse-video/jumbleEncrypted.py` performs the jumbling.
-
-### AES Conversion (`aesConversion.py`)
-
-- Flags:
-	- `--input-file`: path to the plaintext `.txt` to encrypt (env default not used)
-	- `--output-file`: path to write HEX ciphertext
-	- `--key`: override AES_ENCRYPT_KEY from `.env`
-	- `--iv`: override AES_INITIAL_VECTOR from `.env`
-	- `--mode`: override DEFAULT_AES_MODE from `.env`
-
-- Env variables (in `text-to-morse-video/.env`):
-	- `AES_ENCRYPT_KEY` (required)
-	- `AES_INITIAL_VECTOR` (required)
-	- `DEFAULT_AES_MODE` (e.g. `cbc`)
-
-- Run without overrides (uses `.env`):
-
-	```bash
-	python aesConversion.py --input-file input.txt --output-file encrypted.txt
-	```
-
-- Run with CLI overrides:
-
-	```bash
-	python aesConversion.py --input-file input.txt --output-file encrypted.txt --key MYKEY --iv MYIV --mode cbc
-	```
-
-### Data Normalization (`dataToText.py`)
-
-- Flags:
-	- `--input-file`: path to input data (csv, json, txt)
-	- `--output-file`: path to write normalized text (default `output.txt`)
-
-- Behavior:
-	- Reads CSV/JSON/TXT and writes a plain text representation for AES input.
-
-### Jumbling (`jumbleEncrypted.py`)
-
-- Flags:
-	- `--input-file`: path to `encrypted.txt` (default `encrypted.txt`)
-	- `--output-file`: path to `jumbled.txt` (default `jumbled.txt`)
-	- `--jump`: override `CHARACTERS_JUMP_LENGTH` from `.env`
-
-- Env variables:
-	- `CHARACTERS_JUMP_LENGTH` (default `5`)
-
-- Run using `.env` value:
-
-	```bash
-	python jumbleEncrypted.py
-	```
-
-- Run with CLI override:
-
-	```bash
-	python jumbleEncrypted.py --input-file encrypted.txt --output-file jumbled.txt --jump 7
-	```
-
-### Morse Generation (`toMorseCode.py`)
-
-- Flags:
-	- `--input-file`: path to `jumbled.txt` (default `jumbled.txt`)
-	- `--output-file`: path to write audio (default `morse.mp3`)
-	- `--dot-ms`: dot duration in milliseconds (overrides env)
-	- `--freq`: tone frequency in Hz
-	- `--volume`: 0.0-1.0 volume
-	- `--format`: `mp3` or `wav` (overrides env)
-
-- Env variables (recommended additions to `text-to-morse-video/.env`):
-	- `MORSE_DOT_MS=80`
-	- `MORSE_TONE_FREQ=750`
-	- `MORSE_VOLUME=0.6`
-	- `MORSE_OUTPUT_FORMAT=mp3`
-
-- Run with defaults (uses `.env`):
-
-	```bash
-	python toMorseCode.py
-	```
-
-- Run with CLI overrides:
-
-	```bash
-	python toMorseCode.py --input-file jumbled.txt --output-file out.wav --dot-ms 100 --freq 800 --volume 0.5 --format wav
-	```
-
-All scripts print colored, verbose messages via the shared `utils` ANSI helpers. For single-file testing, you can override `.env` values via flags as shown above.
-
-## Repository Structure
-
-Top-level files and important folders in this directory:
-
-- `.env` — shared configuration used by all scripts (AES keys, jump length, morse settings, loop word).
-- `README.md` — this file.
-- `encrypted.txt`, `jumbled.txt`, `morse.wav`, `final.wav` — example outputs produced during runs.
-- `encrypt/` — pipeline scripts that perform the full encrypt->morse->mix process (CLI friendly).
-- `decrypt/` — (placeholder) intended to hold decryption tools.
-- `utils/` — shared helpers used by all scripts:
-	- `utils/ansi.py` — ANSI coloring helpers for colored terminal output.
-	- `utils/env.py` — locate & read the single shared `.env` file.
-	- `utils/aes.py` — AES encrypt/decrypt helper used by the pipeline.
-
-## What This Directory Does
-
-`text-to-morse-video` implements a multi-stage pipeline that:
-
-- Normalizes input data (`dataToText.py`).
-- Wraps one or more files into a manifest payload so decryption can restore exact file contents and paths.
-- AES-encrypts the normalized text into HEX (`aesConversion.py`).
-- Jumbles the ciphertext into groups based on `CHARACTERS_JUMP_LENGTH` (`jumbleEncrypted.py`).
-- Converts the jumbled HEX into Morse and synthesizes audio (`toMorseCode.py`).
-- Generates a looping background Morse from `RANDOM_WORD_ON_LOOP` and mixes it with the main Morse (`mergeMorseLoop.py`).
-- A single-run pipeline `encrypt/encrypt.py` ties these steps together and can process a file or a directory (modes: single combined output or per-file outputs).
-
-All scripts default to settings in the shared `.env` but expose CLI flags to override values for testing.
-
-## Recent Changes (what was added)
-
-- Added `utils/ansi.py` and wired colored output across scripts.
-- Added `utils/env.py` so every script reads the single shared `text-to-morse-video/.env`.
-- Implemented `jumbleEncrypted.py`, `toMorseCode.py`, `mergeMorseLoop.py` for the morse pipeline.
-- Added `encrypt/encrypt.py` pipeline runner with directory mode, ETA, and CLI overrides.
-- Updated README with per-script flags and usage examples.
-
-If any of the above descriptions don't match how you want the pipeline to behave, tell me which part to adjust and I will update the docs and code accordingly.
-
-### Decrypting / Recovery (decrypt/)
-
-The `decrypt` folder contains tools to reverse the pipeline. Important scripts:
-
-- `decrypt/remove_loop.py` — subtracts the `RANDOM_WORD_ON_LOOP` morse loop from a mixed WAV to recover the main morse.
-- `decrypt/wav_to_jumbled.py` — decodes a cleaned mono WAV into jumbled UTF characters (produces `jumbled_recovered.txt`).
-- `decrypt/rev_jumble.py` — reverses the jumbling step to rebuild the AES HEX ciphertext.
-- `utils/rev_aes.py` — central AES decryption utility (moved to `utils/`) — decrypts HEX ciphertext to plaintext using `AES_ENCRYPT_KEY` and `AES_INITIAL_VECTOR` from the shared `.env` or CLI overrides.
-
-Typical recovery workflow:
-
-1. Convert final MP3 to mono WAV if needed:
+From the repository root:
 
 ```bash
-ffmpeg -i final.mp3 -ac 1 -ar 44100 final.wav
+pip install -r requirements.txt
 ```
 
-2. Remove the loop overlay:
+Optional but recommended for MP3 support:
 
 ```bash
-python decrypt/remove_loop.py --input final.wav --output clean.wav
+sudo apt install ffmpeg
 ```
 
-3. Decode the cleaned WAV to jumbled text:
+## Full Encryption Usage
+
+Run from the repository root:
 
 ```bash
-python decrypt/wav_to_jumbled.py --input clean.wav --output jumbled_recovered.txt
+python text-to-morse-video/encrypt/encrypt.py --input <path> --mode <0|1>
 ```
 
-4. Recover AES HEX and plaintext:
+Arguments:
+
+- `--input`: file or folder to encrypt.
+- `--mode 0`: combine the input set into one final output.
+- `--mode 1`: generate one output per input file.
+- `--output-dir`: output directory. Default is `encrypted_output` inside `encrypt/`.
+- `--key`: override `AES_ENCRYPT_KEY`.
+- `--iv`: override `AES_INITIAL_VECTOR`.
+- `--jump`: override `CHARACTERS_JUMP_LENGTH`.
+- `--dot-ms`: override `MORSE_DOT_MS`.
+- `--freq`: override `MORSE_TONE_FREQ`.
+- `--loop-word`: override `RANDOM_WORD_ON_LOOP`.
+- `--loop-volume`: override loop volume.
+- `--main-volume`: override main Morse volume.
+- `--format`: `wav` or `mp3`.
+
+### Mode 0: Folder To Single Output
+
+This is the right mode when you want one audio output containing a whole dataset.
+
+Example:
 
 ```bash
-python decrypt/rev_jumble.py --input jumbled_recovered.txt --output encrypted_recovered.txt
-python -m utils.rev_aes --input encrypted_recovered.txt --output recovered.txt
+python text-to-morse-video/encrypt/encrypt.py \
+	--input ./exports \
+	--mode 0 \
+	--output-dir ./tmv_out \
+	--format wav
 ```
 
-If the plaintext is a manifest payload produced by the current encrypt pipeline, `decrypt/decrypt.py`
-restores the original file tree directly into the selected output directory instead of emitting one
-combined text file.
+If `./exports` contains:
 
-All decrypt scripts read defaults from the shared `text-to-morse-video/.env`. Use CLI flags to override settings for tuning (e.g. `--dot-ms`, `--freq`, `--loop-volume`).
+- `users.json`
+- `orders.csv`
+- `notes.txt`
+
+then one combined encrypted payload is produced and written as:
+
+- `./tmv_out/encrypted.txt`
+- `./tmv_out/jumbled.txt`
+- `./tmv_out/final.wav` or `final.mp3`
+
+Use this mode when:
+
+- you want one portable encrypted audio artifact,
+- you want to archive one full export,
+- you are shipping one combined dataset.
+
+### Mode 1: One Output Per File
+
+This mode processes each file independently.
+
+Example:
+
+```bash
+python text-to-morse-video/encrypt/encrypt.py \
+	--input ./exports \
+	--mode 1 \
+	--output-dir ./tmv_out \
+	--format wav
+```
+
+Output layout will look like:
+
+```text
+tmv_out/
+	users/
+		encrypted.txt
+		jumbled.txt
+		final.wav
+	orders/
+		encrypted.txt
+		jumbled.txt
+		final.wav
+	notes/
+		encrypted.txt
+		jumbled.txt
+		final.wav
+```
+
+Use this mode when:
+
+- each file should be decrypted independently,
+- you want smaller audio artifacts,
+- you are processing datasets file by file.
+
+## Full Decryption Usage
+
+Run from the repository root:
+
+```bash
+python text-to-morse-video/decrypt/decrypt.py --input <wav-or-folder> --mode <0|1>
+```
+
+Arguments:
+
+- `--input`: a final WAV file or a folder of WAV files.
+- `--mode 0`: combined recovery into one output directory.
+- `--mode 1`: restore one result per input file.
+- `--output-dir`: target directory for restored files.
+- `--jump`: override `CHARACTERS_JUMP_LENGTH`.
+- `--dot-ms`: override `MORSE_DOT_MS`.
+- `--freq`: override `MORSE_TONE_FREQ`.
+- `--loop-word`: override `RANDOM_WORD_ON_LOOP`.
+- `--loop-volume`: override loop volume.
+- `--key`: override `AES_ENCRYPT_KEY`.
+- `--iv`: override `AES_INITIAL_VECTOR`.
+
+### Decrypt One Combined Audio
+
+```bash
+python text-to-morse-video/decrypt/decrypt.py \
+	--input ./tmv_out/final.wav \
+	--mode 0 \
+	--output-dir ./restored
+```
+
+If the source audio came from folder mode `0`, the original folder contents are restored under `./restored`.
+
+### Decrypt Per-File Audio
+
+```bash
+python text-to-morse-video/decrypt/decrypt.py \
+	--input ./tmv_out/users/final.wav \
+	--mode 1 \
+	--output-dir ./restored
+```
+
+That restores the original file under a subdirectory inside `./restored`.
+
+## Using Each Module Directly
+
+You do not have to run the full pipeline every time. Each stage can be used directly.
+
+### 1. Normalize Data
+
+```bash
+python text-to-morse-video/encrypt/dataToText.py \
+	--input-file ./data/orders.csv \
+	--output-file ./output.txt
+```
+
+Use this when you only want a plain text rendering of CSV, JSON, or TXT data.
+
+### 2. AES Encrypt Plaintext
+
+```bash
+python text-to-morse-video/encrypt/aesConversion.py \
+	--input-file ./output.txt \
+	--output-file ./encrypted.txt
+```
+
+This writes ciphertext HEX.
+
+### 3. Jumble The HEX
+
+```bash
+python text-to-morse-video/encrypt/jumbleEncrypted.py \
+	--input-file ./encrypted.txt \
+	--output-file ./jumbled.txt
+```
+
+This writes one jumble group per line.
+
+### 4. Convert Jumbled Text To Morse Audio
+
+```bash
+python text-to-morse-video/encrypt/toMorseCode.py \
+	--input-file ./jumbled.txt \
+	--output-file ./morse.wav \
+	--format wav
+```
+
+### 5. Mix Loop Morse With Main Morse
+
+```bash
+python text-to-morse-video/encrypt/mergeMorseLoop.py \
+	--jumbled ./jumbled.txt \
+	--output ./final.wav \
+	--format wav
+```
+
+### 6. Remove Loop During Recovery
+
+```bash
+python text-to-morse-video/decrypt/remove_loop.py \
+	--input ./final.wav \
+	--output ./clean.wav
+```
+
+### 7. Decode Clean WAV Back To Jumbled Text
+
+```bash
+python text-to-morse-video/decrypt/wav_to_jumbled.py \
+	--input ./clean.wav \
+	--output ./jumbled_recovered.txt
+```
+
+### 8. Reverse The Jumble
+
+```bash
+python text-to-morse-video/decrypt/rev_jumble.py \
+	--input ./jumbled_recovered.txt \
+	--output ./encrypted_recovered.txt
+```
+
+### 9. AES Decrypt Recovered HEX
+
+```bash
+python -m utils.rev_aes \
+	--input ./encrypted_recovered.txt \
+	--output ./recovered.txt
+```
+
+## Using It With Real Database Data
+
+This project does not connect directly to MySQL, PostgreSQL, MongoDB, or SQLite.
+The correct approach is to export your database data into supported files and then encrypt those files.
+
+Recommended patterns:
+
+### Option 1: Export Tables To CSV
+
+Good for:
+
+- relational tables,
+- analytics exports,
+- tabular snapshots.
+
+Example layout:
+
+```text
+db_export/
+	users.csv
+	orders.csv
+	invoices.csv
+```
+
+Encrypt all tables into one audio:
+
+```bash
+python text-to-morse-video/encrypt/encrypt.py \
+	--input ./db_export \
+	--mode 0 \
+	--output-dir ./db_audio \
+	--format wav
+```
+
+### Option 2: Export Documents To JSON
+
+Good for:
+
+- MongoDB collections,
+- API payload archives,
+- nested records.
+
+Example layout:
+
+```text
+db_export/
+	users.json
+	sessions.json
+	audit_log.json
+```
+
+Then run the same folder encryption flow.
+
+### Option 3: Application Snapshot Folder
+
+Good for mixed exports from a real system.
+
+Example:
+
+```text
+snapshot/
+	customers.csv
+	config.json
+	notes.txt
+	reports/
+		daily.json
+		summary.txt
+```
+
+The current pipeline recursively discovers supported files inside folders, so nested supported files are included automatically.
+
+### Option 4: One File Per Dataset
+
+If you want each table or collection to decrypt separately, use mode `1`.
+
+```bash
+python text-to-morse-video/encrypt/encrypt.py \
+	--input ./db_export \
+	--mode 1 \
+	--output-dir ./db_audio \
+	--format wav
+```
+
+That produces one audio artifact per input file.
+
+## Recommended Real-World Workflows
+
+### Workflow A: Archive An Entire Export
+
+1. Export your database into a folder of CSV or JSON files.
+2. Run encrypt mode `0` on that folder.
+3. Store the resulting `final.wav` or `final.mp3`.
+4. Decrypt with `decrypt.py` when restoration is needed.
+
+### Workflow B: Encrypt Table By Table
+
+1. Export each table or collection as a separate file.
+2. Run encrypt mode `1`.
+3. Keep the resulting per-file output directories.
+4. Decrypt only the files you need later.
+
+### Workflow C: Manual Stage Debugging
+
+1. Run `aesConversion.py`.
+2. Run `jumbleEncrypted.py`.
+3. Run `toMorseCode.py`.
+4. Run `mergeMorseLoop.py`.
+5. Reverse with `remove_loop.py`, `wav_to_jumbled.py`, and `rev_jumble.py`.
+
+This is the right workflow if you are tuning Morse timing or checking where corruption happens.
+
+## Important Practical Notes
+
+- Prefer `wav` while testing. It avoids MP3 compression artifacts.
+- Use the same `.env` values for encryption and decryption.
+- `RANDOM_WORD_ON_LOOP` must stay identical across both sides.
+- `CHARACTERS_JUMP_LENGTH` must match on both sides.
+- AES key and IV must match on both sides.
+- If you change Morse timing, decrypt with the same timing.
+- Folder input only processes supported file types.
+
+## Output Examples
+
+Combined mode output:
+
+```text
+encrypted_output/
+	encrypted.txt
+	jumbled.txt
+	final.wav
+```
+
+Per-file mode output:
+
+```text
+encrypted_output/
+	file_a/
+		encrypted.txt
+		jumbled.txt
+		final.wav
+	file_b/
+		encrypted.txt
+		jumbled.txt
+		final.wav
+```
+
+Decrypted output for a combined manifest:
+
+```text
+decrypted_output/
+	users.csv
+	orders.csv
+	reports/
+		weekly.json
+```
+
+## Troubleshooting
+
+`ModuleNotFoundError`:
+
+- install dependencies with `pip install -r requirements.txt`
+
+`Could not convert to MP3`:
+
+- install `ffmpeg`, or use `--format wav`
+
+`Invalid padding bytes` or HEX decode errors:
+
+- make sure key, IV, jump length, Morse timing, and loop word all match between encryption and decryption
+- prefer WAV for validation before trying MP3
+
+No files found in folder mode:
+
+- check that the folder contains supported `.txt`, `.json`, or `.csv` files
+
+## Minimal Working Examples
+
+Encrypt one file:
+
+```bash
+python text-to-morse-video/encrypt/encrypt.py \
+	--input ./message.txt \
+	--mode 1 \
+	--output-dir ./out \
+	--format wav
+```
+
+Decrypt it back:
+
+```bash
+python text-to-morse-video/decrypt/decrypt.py \
+	--input ./out/message/final.wav \
+	--mode 1 \
+	--output-dir ./restored
+```
+
+Encrypt one folder into one audio:
+
+```bash
+python text-to-morse-video/encrypt/encrypt.py \
+	--input ./dataset \
+	--mode 0 \
+	--output-dir ./out \
+	--format wav
+```
+
+Decrypt it back:
+
+```bash
+python text-to-morse-video/decrypt/decrypt.py \
+	--input ./out/final.wav \
+	--mode 0 \
+	--output-dir ./restored
+```
 
