@@ -5,3 +5,5 @@ CONTEXT.md
 *.wav
 encrypted_output/
 decrypted_output/
+tti_out
+restored
