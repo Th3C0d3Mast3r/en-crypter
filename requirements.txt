@@ -2,6 +2,10 @@ pandas
 cryptography
 pydub
 python-dotenv
+fastapi
+uvicorn[standard]
+python-multipart
 
 # Notes:
 # - `pydub` requires `ffmpeg` installed on the system to convert WAV->MP3.
+# - The frontend uploads files to the FastAPI backend for processing.

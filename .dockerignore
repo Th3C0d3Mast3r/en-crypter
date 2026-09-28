@@ -1,0 +1,14 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.wav
+*.ppm
+*.png
+*.jpg
+*.jpeg
+text-to-morse-video/encrypt/encrypted_output
+text-to-morse-video/decrypt/decrypted_output
+text-to-image/encrypt/tti_out
+text-to-image/decrypt/restore
