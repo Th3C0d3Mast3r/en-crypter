@@ -11,7 +11,7 @@ const fallbackModules = [
   { name: 'Custom Module', slug: 'custom', description: 'Your next backend module', icon: Boxes, color: 'pink', tag: 'AUTO', detail: 'Any sub-directory with a manifest appears here automatically.' },
 ]
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || ''
 
 export default function Page() {
   const [modules, setModules] = useState(fallbackModules)
