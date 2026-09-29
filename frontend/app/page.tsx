@@ -21,12 +21,22 @@ export default function Page() {
   const [queued, setQueued] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [status, setStatus] = useState('Ready to process')
+  const [progress, setProgress] = useState(0)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [outputDirectory, setOutputDirectory] = useState('')
   const [filePreview, setFilePreview] = useState<string>('')
   const [saveResult, setSaveResult] = useState<{ message: string; outputDir: string; files: string[] } | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const progressTimerRef = useRef<number | null>(null)
 
   const canProcess = !!selectedFile && selected !== null
+
+  const clearProgressTimer = () => {
+    if (progressTimerRef.current !== null) {
+      window.clearInterval(progressTimerRef.current)
+      progressTimerRef.current = null
+    }
+  }
 
   useEffect(() => {
     let mounted = true
@@ -56,6 +66,10 @@ export default function Page() {
     }
   }, [selected])
 
+  useEffect(() => () => {
+    clearProgressTimer()
+  }, [])
+
   const handleUpload = async () => {
     if (!selected || !selectedFile) {
       setStatus('Please pick a file before processing.')
@@ -69,14 +83,23 @@ export default function Page() {
 
     setIsSubmitting(true)
     setQueued(true)
+    setProgress(12)
     setStatus(`Processing ${selected.name} via Python backend...`)
     setSaveResult(null)
+
+    clearProgressTimer()
+    progressTimerRef.current = window.setInterval(() => {
+      setProgress((current) => (current < 92 ? current + 6 : current))
+    }, 300)
 
     const formData = new FormData()
     formData.append('file', selectedFile)
     formData.append('module', selected.slug)
     formData.append('mode', mode)
     formData.append('source_type', source)
+    if (outputDirectory.trim()) {
+      formData.append('output_dir', outputDirectory.trim())
+    }
 
     try {
       const response = await fetch(`${API_BASE}/api/process`, {
@@ -90,6 +113,7 @@ export default function Page() {
         throw new Error(data?.detail || data?.message || 'The backend rejected the request.')
       }
 
+      setProgress(100)
       const resultFiles = Array.isArray(data.files) ? data.files : []
       const outputDir = data.outputDir || 'Unknown output location'
       setSaveResult({
@@ -101,7 +125,9 @@ export default function Page() {
       console.log('Process result:', data)
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Unknown processing error.')
+      setProgress(100)
     } finally {
+      clearProgressTimer()
       setIsSubmitting(false)
       setQueued(false)
     }
@@ -112,18 +138,36 @@ export default function Page() {
       <header className="topbar">
         <div className="brand"><div className="brand-mark"><ShieldCheck size={20} strokeWidth={2.5} /></div><span>CRYPT<span className="brand-accent">CROSS</span></span></div>
         <div className="status"><span className="status-dot" /> LOCAL ENGINE <span className="status-divider">/</span> PYTHON BACKEND</div>
-        <nav><button className="icon-button" aria-label="Help"><CircleHelp size={19} /></button><button className="icon-button" aria-label="Settings"><Settings2 size={19} /></button><button className="menu-button"><Menu size={18} /> MENU</button></nav>
+        {/* <nav><button className="icon-button" aria-label="Help"><CircleHelp size={19} /></button><button className="icon-button" aria-label="Settings"><Settings2 size={19} /></button><button className="menu-button"><Menu size={18} /> MENU</button></nav> */}
       </header>
 
-      <section className="hero"><div className="eyebrow"><Sparkles size={14} /> CROSS-TYPE ENCRYPTION STORAGE</div><h1>Make data <span>unrecognizable.</span></h1><p>Transform your files into entirely different types. <b>Local-first.</b> Private by design.</p><div className="hero-line"><span /><Terminal size={16} /><span /></div></section>
+      <section className="hero">
+        <div className="eyebrow">
+          <Sparkles size={14} /> CROSS-TYPE ENCRYPTION STORAGE</div><h1>Make data <span>unrecognizable.</span></h1><p>Transform your files into entirely different types. <b>Local-first.</b> Private by design.</p><div className="hero-line"><span /><Terminal size={16} /><span />
+          </div>
+      </section>
 
-      <section className="workspace"><div className="section-heading"><div><p className="kicker">SELECT A MODULE</p><h2>Pick your weapon.</h2></div><div className="module-count">{modules.length} MODULES <span>·</span> LIVE API</div></div>
-        <div className="module-grid">{modules.map((module, i) => { const Icon = module.icon; return <button key={module.slug} className={`module-card ${module.color} ${selected?.slug === module.slug ? 'active' : ''}`} onClick={() => { setSelected(module); setQueued(false) }}><div className="card-top"><span className="card-index">0{i + 1}</span><span className="tag">{module.tag}</span></div><div className="module-icon"><Icon size={30} strokeWidth={1.8} /></div><h3>{module.name}</h3><p>{module.description}</p><div className="card-arrow"><ArrowRight size={18} /></div></button> })}</div>
+      <section className="workspace">
+        <div className="section-heading">
+          <div><p className="kicker">SELECT A MODULE</p><h2>Pick your weapon.</h2></div><div className="module-count">{modules.length} MODULES <span>·</span> LIVE API</div>
+        </div>
+
+        <div className="module-grid">
+          {modules.map((module, i) => { const Icon = module.icon; return <button key={module.slug} className={`module-card ${module.color} ${selected?.slug === module.slug ? 'active' : ''}`} onClick={() => { setSelected(module); setQueued(false) }}><div className="card-top"><span className="card-index">0{i + 1}</span><span className="tag">{module.tag}</span></div><div className="module-icon"><Icon size={30} strokeWidth={1.8} /></div><h3>{module.name}</h3><p>{module.description}</p><div className="card-arrow"><ArrowRight size={18} /></div></button> })}</div>
       </section>
 
       {selected && <section className="panel"><div className="panel-head"><div><p className="kicker">{selected.slug.toUpperCase()} / PROCESSOR</p><h2>{selected.name}</h2></div><button className="close-button" onClick={() => setSelected(null)} aria-label="Close processor"><X size={18} /></button></div><p className="panel-description">{selected.detail}</p><div className="mode-toggle"><button className={mode === 'encrypt' ? 'selected' : ''} onClick={() => setMode('encrypt')}><LockKeyhole size={16} /> ENCRYPT</button><button className={mode === 'decrypt' ? 'selected' : ''} onClick={() => setMode('decrypt')}><ShieldCheck size={16} /> DECRYPT</button></div><div className="source-row"><button className={`source-option ${source === 'file' ? 'selected' : ''}`} onClick={() => setSource('file')}><Upload size={21} /><span><b>Single file</b><small>Choose one input</small></span><ChevronRight size={16} /></button><button className={`source-option ${source === 'folder' ? 'selected' : ''}`} onClick={() => setSource('folder')}><FolderOpen size={21} /><span><b>Folder</b><small>Disabled for manual testing</small></span><ChevronRight size={16} /></button></div>
 
         <div className="upload-box">
+          <label className="directory-field">
+            <span>Custom save directory</span>
+            <input
+              type="text"
+              value={outputDirectory}
+              onChange={(event) => setOutputDirectory(event.target.value)}
+              placeholder="Leave blank for the default generated_outputs folder"
+            />
+          </label>
           <input
             ref={fileInputRef}
             type="file"
@@ -160,6 +204,17 @@ export default function Page() {
           {isSubmitting ? 'PROCESSING…' : queued ? 'READY — CONNECTING TO PYTHON' : `RUN ${source.toUpperCase()} & ${mode.toUpperCase()}`}
           <ArrowRight size={18} />
         </button>
+        {(isSubmitting || progress > 0) && (
+          <div className="progress-block" aria-live="polite">
+            <div className="progress-meta">
+              <span>Saving output</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="progress-track" aria-hidden="true">
+              <div className="progress-fill" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+        )}
         <div className="status-strip">{status}</div>
 
         {saveResult && (

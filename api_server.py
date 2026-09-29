@@ -14,6 +14,9 @@ from fastapi.responses import JSONResponse
 PROJECT_ROOT = Path(__file__).resolve().parent
 OUTPUT_ROOT = PROJECT_ROOT / "generated_outputs"
 OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+
+# this is where I have to add the module that will come in
+# it is not auto-fetch from tree, but rather, we put the entry point and stuff
 ALLOWED_MODULES = {
     "morse": {
         "label": "Morse Audio",
@@ -55,9 +58,15 @@ def modules() -> list[dict]:
     ]
 
 
-def make_output_dir(module_slug: str, mode: str, original_name: str) -> Path:
-    safe_name = Path(original_name).stem.replace(" ", "_") or "output"
-    target_dir = OUTPUT_ROOT / module_slug / mode / safe_name
+def make_output_dir(module_slug: str, mode: str, original_name: str, custom_output_dir: str | None = None) -> Path:
+    if custom_output_dir:
+        target_dir = Path(custom_output_dir).expanduser()
+        if not target_dir.is_absolute():
+            target_dir = PROJECT_ROOT / target_dir
+    else:
+        safe_name = Path(original_name).stem.replace(" ", "_") or "output"
+        target_dir = OUTPUT_ROOT / module_slug / mode / safe_name
+
     target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir
 
@@ -119,6 +128,7 @@ async def process(
     module: str = Form(...),
     mode: str = Form("encrypt"),
     source_type: str = Form("file"),
+    output_dir: str | None = Form(default=None),
 ):
     if module not in ALLOWED_MODULES:
         raise HTTPException(status_code=400, detail=f"Unsupported module: {module}")
@@ -132,13 +142,13 @@ async def process(
     with TemporaryDirectory(prefix="cryptcross-") as tmpdir:
         tmp_path = Path(tmpdir)
         input_path = tmp_path / safe_name
-        output_dir = make_output_dir(module, mode, safe_name)
+        output_dir_path = make_output_dir(module, mode, safe_name, output_dir)
 
         contents = await file.read()
         input_path.write_bytes(contents)
 
         try:
-            cmd = build_command(module, input_path, output_dir, mode, source_type)
+            cmd = build_command(module, input_path, output_dir_path, mode, source_type)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -163,21 +173,21 @@ async def process(
             )
 
         generated = []
-        if output_dir.exists():
-            for path in sorted(output_dir.rglob("*")):
+        if output_dir_path.exists():
+            for path in sorted(output_dir_path.rglob("*")):
                 if path.is_file():
-                    generated.append(str(path.relative_to(tmp_path)))
+                    generated.append(str(path.relative_to(output_dir_path)))
 
         return {
             "status": "ok",
             "module": module,
             "mode": mode,
             "sourceType": source_type,
-            "outputDir": str(output_dir),
+            "outputDir": str(output_dir_path.resolve()),
             "files": generated,
             "stdout": proc.stdout,
             "stderr": proc.stderr,
-            "message": f"{module} pipeline completed successfully. Saved to {output_dir}.",
+            "message": f"{module} pipeline completed successfully. Saved to {output_dir_path.resolve()}.",
         }
 
 
